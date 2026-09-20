@@ -1,0 +1,19 @@
+# Reference copy of the Prometheus configuration deployed by Terraform Stage 1.
+# Runtime configuration is generated on the monitoring EC2 instance.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: project1-fastapi
+    metrics_path: /metrics
+    ec2_sd_configs:
+      - region: eu-west-2
+        port: 80
+        filters:
+          - name: tag:Project
+            values: [devops-cicd-project]
+          - name: tag:Environment
+            values: [dev]
+          - name: tag:Role
+            values: [app]
