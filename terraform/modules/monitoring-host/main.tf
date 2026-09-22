@@ -121,6 +121,8 @@ resource "aws_instance" "monitoring" {
     mkdir -p /opt/observability/prometheus-data
     mkdir -p /opt/observability/grafana-data
     mkdir -p /opt/observability/grafana-provisioning/datasources
+    chown -R 65534:65534 /opt/observability/prometheus-data
+    chown -R 472:472 /opt/observability/grafana-data
 
     cat > /opt/observability/prometheus/prometheus.yml <<'PROMETHEUS'
     global:
