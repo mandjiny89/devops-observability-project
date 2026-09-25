@@ -98,6 +98,7 @@ resource "aws_instance" "monitoring" {
   vpc_security_group_ids      = [aws_security_group.monitoring.id]
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.monitoring.name
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_type = "gp3"
@@ -121,8 +122,30 @@ resource "aws_instance" "monitoring" {
     mkdir -p /opt/observability/prometheus-data
     mkdir -p /opt/observability/grafana-data
     mkdir -p /opt/observability/grafana-provisioning/datasources
+    mkdir -p /opt/observability/grafana-provisioning/dashboards
+    mkdir -p /opt/observability/grafana-dashboards
+    
+    echo '${base64encode(file("${path.module}/../../../grafana/dashboards/project1-infrastructure.json"))}' \
+      | base64 -d \
+      > /opt/observability/grafana-dashboards/project1-infrastructure.json
+ 
     chown -R 65534:65534 /opt/observability/prometheus-data
     chown -R 472:472 /opt/observability/grafana-data
+
+    cat > /opt/observability/grafana-provisioning/dashboards/dashboards.yml <<'DASHBOARDS'
+    apiVersion: 1
+
+    providers:
+      - name: Project 1
+        orgId: 1
+        folder: Project 1
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+    DASHBOARDS
 
     cat > /opt/observability/prometheus/prometheus.yml <<'PROMETHEUS'
     global:
@@ -241,6 +264,7 @@ resource "aws_instance" "monitoring" {
       --network host \
       -v /opt/observability/grafana-data:/var/lib/grafana \
       -v /opt/observability/grafana-provisioning:/etc/grafana/provisioning:ro \
+      -v /opt/observability/grafana-dashboards:/var/lib/grafana/dashboards:ro \
       grafana/grafana:12.1.1
   EOF
 
