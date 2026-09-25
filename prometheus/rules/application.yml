@@ -3,6 +3,10 @@ groups:
     rules:
       - alert: Project1FastAPIDown
         expr: up{job="project1-fastapi"} == 0
-        for: 2m
+        for: 1m
         labels:
           severity: critical
+          project: project1
+        annotations:
+          summary: "FastAPI application unavailable"
+          description: "FastAPI on {{ $labels.instance_id }} has been unavailable for more than 1 minute."

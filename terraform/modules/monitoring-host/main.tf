@@ -214,21 +214,60 @@ resource "aws_instance" "monitoring" {
         rules:
           - alert: Project1FastAPIDown
             expr: up{job="project1-fastapi"} == 0
-            for: 2m
+            for: 1m
             labels:
               severity: critical
+              project: project1
             annotations:
-              summary: "Project 1 FastAPI target is down"
-
-          - alert: Project1NodeExporterDown
-            expr: up{job="project1-node"} == 0
-            for: 2m
-            labels:
-              severity: warning
-            annotations:
-              summary: "Project 1 Node Exporter target is down"
+              summary: "FastAPI application unavailable"
+              description: "FastAPI on {{ $labels.instance_id }} has been unavailable for more than 1 minute."
     RULES
 
+    cat > /opt/observability/prometheus/rules/infrastructure.yml <<'RULES'
+    groups:
+      - name: project1-infrastructure
+        rules:
+          - alert: Project1NodeExporterDown
+            expr: up{job="project1-node"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              project: project1
+            annotations:
+              summary: "Node Exporter unavailable"
+              description: "Node Exporter on {{ $labels.instance_id }} has been unavailable for more than 1 minute."
+
+          - alert: Project1HighCPU
+            expr: 100 - (avg by (instance_id) (rate(node_cpu_seconds_total{job="project1-node",mode="idle"}[5m])) * 100) > 80
+            for: 5m
+            labels:
+              severity: warning
+              project: project1
+            annotations:
+              summary: "High CPU usage"
+              description: "CPU usage on {{ $labels.instance_id }} has exceeded 80% for 5 minutes."
+
+          - alert: Project1HighMemory
+            expr: (1 - (node_memory_MemAvailable_bytes{job="project1-node"} / node_memory_MemTotal_bytes{job="project1-node"})) * 100 > 85
+            for: 5m
+            labels:
+              severity: warning
+              project: project1
+            annotations:
+              summary: "High memory usage"
+              description: "Memory usage on {{ $labels.instance_id }} has exceeded 85% for 5 minutes."
+
+          - alert: Project1HighDiskUsage
+            expr: 100 * (1 - (node_filesystem_avail_bytes{job="project1-node",mountpoint="/",fstype!="rootfs"} / node_filesystem_size_bytes{job="project1-node",mountpoint="/",fstype!="rootfs"})) > 85
+            for: 5m
+            labels:
+              severity: warning
+              project: project1
+            annotations:
+              summary: "High disk usage"
+              description: "Root filesystem usage on {{ $labels.instance_id }} has exceeded 85% for 5 minutes."
+    RULES
+    
     cat > /opt/observability/grafana-provisioning/datasources/prometheus.yml <<'GRAFANA'
     apiVersion: 1
     datasources:
