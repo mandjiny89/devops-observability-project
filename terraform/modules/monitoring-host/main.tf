@@ -233,6 +233,7 @@ resource "aws_instance" "monitoring" {
     apiVersion: 1
     datasources:
       - name: Prometheus
+        uid: prometheus
         type: prometheus
         access: proxy
         url: http://127.0.0.1:9090
