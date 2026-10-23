@@ -203,9 +203,33 @@ jobs:
           import json
           from pathlib import Path
 
-          config = base64.b64encode(
-              Path("alertmanager/alertmanager.yml").read_bytes()
-          ).decode()
+          import subprocess
+
+          webhook_url = subprocess.check_output(
+              [
+                  "terraform",
+                  "-chdir=terraform/environments/dev",
+                  "output",
+                  "-raw",
+                  "alert_webhook_url",
+              ],
+              text=True,
+          ).strip()
+
+          config_text = Path("alertmanager/alertmanager.yml").read_text()
+
+          import re
+
+          config_text, count = re.subn(
+              r"https://[a-z0-9]+\.execute-api\.eu-west-2\.amazonaws\.com/alerts",
+              webhook_url,
+              config_text,
+          )
+
+          if count != 1:
+              raise RuntimeError(f"Expected one webhook URL, found {count}")
+
+          config = base64.b64encode(config_text.encode()).decode()
 
           script = base64.b64encode(
               Path("scripts/deploy-alertmanager.sh").read_bytes()
