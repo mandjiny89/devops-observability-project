@@ -27,6 +27,7 @@ env:
   PROJECT_NAME: devops-observability-project
   ENVIRONMENT: dev
   AWS_ROLE_ARN: arn:aws:iam::861019856428:role/devops-observability-github-actions-role
+  TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email }}
 
 jobs:
   bootstrap-backend:
