@@ -180,7 +180,6 @@ jobs:
 
           echo "Waiting for SSM deployment: $COMMAND_ID"
 
-          aws ssm wait command-executed \
           if ! aws ssm wait command-executed \
             --region "$AWS_REGION" \
             --command-id "$COMMAND_ID" \
