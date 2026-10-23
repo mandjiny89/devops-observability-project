@@ -28,9 +28,3 @@ variable "grafana_allowed_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
-
-variable "webhook_secret" {
-  description = "Shared secret for Alertmanager webhook authentication"
-  type        = string
-  sensitive   = true
-}
