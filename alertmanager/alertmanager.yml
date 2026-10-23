@@ -12,3 +12,10 @@ route:
 
 receivers:
   - name: default
+    webhook_configs:
+      - url: https://nva1gvmb4m.execute-api.eu-west-2.amazonaws.com/alerts
+        send_resolved: true
+        http_config:
+          basic_auth:
+            username: alertmanager
+            password_file: /etc/alertmanager/secrets/webhook_password
