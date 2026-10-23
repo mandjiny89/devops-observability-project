@@ -275,6 +275,9 @@ resource "aws_instance" "monitoring" {
             annotations:
               summary: "High disk usage"
               description: "Root filesystem usage on {{ $labels.instance_id }} has exceeded 85% for 5 minutes."
+
+    RULES
+
     cat > /opt/observability/alertmanager/alertmanager.yml <<'ALERTMANAGER'
     global:
       resolve_timeout: 5m
@@ -292,7 +295,6 @@ resource "aws_instance" "monitoring" {
       - name: default
     ALERTMANAGER
 
-    RULES
     
     cat > /opt/observability/grafana-provisioning/datasources/prometheus.yml <<'GRAFANA'
     apiVersion: 1
@@ -311,6 +313,13 @@ resource "aws_instance" "monitoring" {
     docker pull prom/prometheus:v3.5.0
     docker pull prom/alertmanager:v0.28.1
     docker pull grafana/grafana:12.1.1
+    
+    docker run --rm \
+      -v /opt/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+      -v /opt/observability/prometheus/rules:/etc/prometheus/rules:ro \
+      --entrypoint /bin/promtool \
+      prom/prometheus:v3.5.0 \
+      check config /etc/prometheus/prometheus.yml
 
     docker rm -f prometheus || true
     docker run -d \
