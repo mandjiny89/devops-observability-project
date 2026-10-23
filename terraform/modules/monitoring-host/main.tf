@@ -124,6 +124,8 @@ resource "aws_instance" "monitoring" {
     mkdir -p /opt/observability/grafana-provisioning/datasources
     mkdir -p /opt/observability/grafana-provisioning/dashboards
     mkdir -p /opt/observability/grafana-dashboards
+    mkdir -p /opt/observability/alertmanager
+    mkdir -p /opt/observability/alertmanager-data
     
     echo '${base64encode(file("${path.module}/../../../grafana/dashboards/project1-infrastructure.json"))}' \
       | base64 -d \
@@ -131,6 +133,7 @@ resource "aws_instance" "monitoring" {
  
     chown -R 65534:65534 /opt/observability/prometheus-data
     chown -R 472:472 /opt/observability/grafana-data
+    chown -R 65534:65534 /opt/observability/alertmanager-data
 
     cat > /opt/observability/grafana-provisioning/dashboards/dashboards.yml <<'DASHBOARDS'
     apiVersion: 1
@@ -154,6 +157,12 @@ resource "aws_instance" "monitoring" {
 
     rule_files:
       - /etc/prometheus/rules/*.yml
+    
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - 127.0.0.1:9093
 
     scrape_configs:
       - job_name: project1-fastapi
@@ -266,6 +275,23 @@ resource "aws_instance" "monitoring" {
             annotations:
               summary: "High disk usage"
               description: "Root filesystem usage on {{ $labels.instance_id }} has exceeded 85% for 5 minutes."
+    cat > /opt/observability/alertmanager/alertmanager.yml <<'ALERTMANAGER'
+    global:
+      resolve_timeout: 5m
+
+    route:
+      receiver: default
+      group_by:
+        - alertname
+        - project
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+    receivers:
+      - name: default
+    ALERTMANAGER
+
     RULES
     
     cat > /opt/observability/grafana-provisioning/datasources/prometheus.yml <<'GRAFANA'
@@ -283,6 +309,7 @@ resource "aws_instance" "monitoring" {
     chown -R 472:472 /opt/observability/grafana-data
 
     docker pull prom/prometheus:v3.5.0
+    docker pull prom/alertmanager:v0.28.1
     docker pull grafana/grafana:12.1.1
 
     docker rm -f prometheus || true
@@ -296,6 +323,17 @@ resource "aws_instance" "monitoring" {
       prom/prometheus:v3.5.0 \
       --config.file=/etc/prometheus/prometheus.yml \
       --storage.tsdb.path=/prometheus
+
+    docker rm -f alertmanager || true
+    docker run -d \
+      --name alertmanager \
+      --restart unless-stopped \
+      --network host \
+      -v /opt/observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+      -v /opt/observability/alertmanager-data:/alertmanager \
+      prom/alertmanager:v0.28.1 \
+      --config.file=/etc/alertmanager/alertmanager.yml \
+      --storage.path=/alertmanager
 
     docker rm -f grafana || true
     docker run -d \
