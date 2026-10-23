@@ -91,6 +91,23 @@ resource "aws_iam_instance_profile" "monitoring" {
   role = aws_iam_role.monitoring.name
 }
 
+
+resource "aws_iam_role_policy" "alertmanager_secret_read" {
+  name = "project2-alertmanager-secret-read"
+  role = aws_iam_role.monitoring.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue"
+      ]
+      Resource = var.webhook_secret_arn
+    }]
+  })
+}
+
 resource "aws_instance" "monitoring" {
   ami                         = data.aws_ssm_parameter.al2023_ami.value
   instance_type               = var.instance_type

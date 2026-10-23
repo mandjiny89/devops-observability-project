@@ -33,3 +33,9 @@ variable "instance_type" {
 variable "grafana_allowed_cidr" {
   type = string
 }
+
+variable "webhook_secret_arn" {
+  description = "ARN of the Alertmanager webhook secret"
+  type        = string
+}
+

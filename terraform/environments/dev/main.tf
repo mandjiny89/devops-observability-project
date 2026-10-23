@@ -38,4 +38,5 @@ module "monitoring_host" {
   project1_app_sg_id   = data.aws_security_group.project1_app.id
   instance_type        = var.instance_type
   grafana_allowed_cidr = var.grafana_allowed_cidr
+  webhook_secret_arn   = data.aws_secretsmanager_secret.alert_webhook.arn
 }
