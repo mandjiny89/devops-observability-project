@@ -1,82 +1,97 @@
 
 #!/usr/bin/env bash
 set -euo pipefail
+set +x
 
 REGION="eu-west-2"
 SECRET_NAME="project2/alertmanager/webhook-secret"
 
 CONFIG_DIR="/opt/observability/alertmanager"
 SECRETS_DIR="$CONFIG_DIR/secrets"
+CONFIG="$CONFIG_DIR/alertmanager.yml"
+STAGED="$CONFIG_DIR/alertmanager.yml.new"
+BACKUP="$CONFIG_DIR/alertmanager.yml.bak"
+IMAGE="prom/alertmanager:v0.28.1"
 
 mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
-# Retrieve password without printing it.
-set +x
+# Retrieve the password directly on EC2.
+# Never print the secret.
 aws secretsmanager get-secret-value \
   --region "$REGION" \
   --secret-id "$SECRET_NAME" \
   --query SecretString \
   --output text > "$SECRETS_DIR/webhook_password"
 
-chmod 600 "$SECRETS_DIR/webhook_password"
+test -s "$SECRETS_DIR/webhook_password"
 
-# Alertmanager normally runs as a non-root user.
 chown -R 65534:65534 "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
+chmod 600 "$SECRETS_DIR/webhook_password"
 
-# Validate the staged configuration before replacing the active one.
+# Confirm the staged configuration exists.
+test -s "$STAGED"
+
+# Validate before modifying the active configuration.
 docker run --rm \
-  -v "$CONFIG_DIR/alertmanager.yml.new:/etc/alertmanager/alertmanager.yml:ro" \
+  -v "$STAGED:/etc/alertmanager/alertmanager.yml:ro" \
   -v "$SECRETS_DIR:/etc/alertmanager/secrets:ro" \
   --entrypoint /bin/amtool \
-  prom/alertmanager:v0.28.1 \
+  "$IMAGE" \
   check-config /etc/alertmanager/alertmanager.yml
 
-# Back up the existing configuration and install the validated one.
-cp "$CONFIG_DIR/alertmanager.yml" "$CONFIG_DIR/alertmanager.yml.bak"
-mv "$CONFIG_DIR/alertmanager.yml.new" "$CONFIG_DIR/alertmanager.yml"
+# Back up the existing configuration.
+cp "$CONFIG" "$BACKUP"
 
-# Validate configuration before restarting.
-docker run --rm \
-  -v "$CONFIG_DIR/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
-  -v "$SECRETS_DIR:/etc/alertmanager/secrets:ro" \
-  --entrypoint /bin/amtool \
-  prom/alertmanager:v0.28.1 \
-  check-config /etc/alertmanager/alertmanager.yml
+start_alertmanager() {
+  docker rm -f alertmanager >/dev/null 2>&1 || true
 
-# Replace only the Alertmanager container.
-docker rm -f alertmanager || true
+  docker run -d \
+    --name alertmanager \
+    --restart unless-stopped \
+    --network host \
+    -v "$CONFIG:/etc/alertmanager/alertmanager.yml:ro" \
+    -v "$SECRETS_DIR:/etc/alertmanager/secrets:ro" \
+    -v /opt/observability/alertmanager-data:/alertmanager \
+    "$IMAGE" \
+    --config.file=/etc/alertmanager/alertmanager.yml \
+    --storage.path=/alertmanager
+}
 
-docker run -d \
-  --name alertmanager \
-  --restart unless-stopped \
-  --network host \
-  -v "$CONFIG_DIR/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
-  -v "$SECRETS_DIR:/etc/alertmanager/secrets:ro" \
-  -v /opt/observability/alertmanager-data:/alertmanager \
-  prom/alertmanager:v0.28.1 \
-  --config.file=/etc/alertmanager/alertmanager.yml \
-  --storage.path=/alertmanager
+wait_ready() {
+  for i in $(seq 1 15); do
+    if curl --fail --silent \
+      http://127.0.0.1:9093/-/ready >/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
 
-# Wait for Alertmanager to become healthy.
-healthy=false
+# Install the validated configuration.
+mv "$STAGED" "$CONFIG"
 
-for i in $(seq 1 15); do
-  if curl --fail --silent \
-    http://127.0.0.1:9093/-/ready >/dev/null; then
-    healthy=true
-    break
+echo "Starting Alertmanager with new configuration."
+start_alertmanager
+
+if ! wait_ready; then
+  echo "New Alertmanager failed readiness check. Rolling back."
+
+  # Restore the previous configuration.
+  cp "$BACKUP" "$CONFIG"
+
+  start_alertmanager
+
+  if wait_ready; then
+    echo "Rollback completed. Previous configuration restored."
+  else
+    echo "ERROR: Rollback also failed."
   fi
 
-  sleep 2
-done
-
-if [ "$healthy" != "true" ]; then
-  echo "ERROR: Alertmanager did not become ready."
-  docker logs --tail 30 alertmanager
   exit 1
 fi
 
-echo "Alertmanager deployment completed."
+echo "Alertmanager deployment completed successfully."
 

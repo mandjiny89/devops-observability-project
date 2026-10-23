@@ -130,6 +130,80 @@ jobs:
         working-directory: terraform/environments/dev
         run: terraform output
 
+
+      - name: Deploy Alertmanager through SSM
+        if: ${{ inputs.action == 'deploy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INSTANCE_ID=$(terraform -chdir=terraform/environments/dev output -raw monitoring_instance_id)
+
+          python3 - <<'PY'
+          import base64
+          import json
+          from pathlib import Path
+
+          config = base64.b64encode(
+              Path("alertmanager/alertmanager.yml").read_bytes()
+          ).decode()
+
+          script = base64.b64encode(
+              Path("scripts/deploy-alertmanager.sh").read_bytes()
+          ).decode()
+
+          commands = [
+              "set -eu",
+              "mkdir -p /opt/observability/alertmanager",
+              f"echo '{config}' | base64 -d > /opt/observability/alertmanager/alertmanager.yml.new",
+              f"echo '{script}' | base64 -d > /tmp/deploy-alertmanager.sh",
+              "chmod 700 /tmp/deploy-alertmanager.sh",
+              "trap 'rm -f /tmp/deploy-alertmanager.sh' EXIT",
+              "bash /tmp/deploy-alertmanager.sh",
+          ]
+
+          Path("ssm-parameters.json").write_text(
+              json.dumps({"commands": commands})
+          )
+          PY
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Project 2 Alertmanager configuration" \
+            --parameters file://ssm-parameters.json \
+            --query 'Command.CommandId' \
+            --output text)
+
+          rm -f ssm-parameters.json
+
+          echo "Waiting for SSM deployment: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+          if ! aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"; then
+            echo "SSM command did not complete successfully."
+          fi
+
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,Output:StandardOutputContent,Error:StandardErrorContent}' \
+            --output json
+
+          STATUS=$(aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query Status \
+            --output text)
+
+          test "$STATUS" = "Success"
+
       - name: Terraform destroy plan
         if: ${{ inputs.action == 'destroy' }}
         working-directory: terraform/environments/dev
