@@ -39,4 +39,5 @@ module "monitoring_host" {
   instance_type        = var.instance_type
   grafana_allowed_cidr = var.grafana_allowed_cidr
   webhook_secret_arn   = data.aws_secretsmanager_secret.alert_webhook.arn
+  ssh_allowed_cidr     = var.ssh_allowed_cidr
 }

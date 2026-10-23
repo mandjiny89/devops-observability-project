@@ -39,3 +39,7 @@ variable "webhook_secret_arn" {
   type        = string
 }
 
+variable "ssh_allowed_cidr" {
+  description = "IPv4 CIDR allowed to SSH into the monitoring EC2"
+  type        = string
+}

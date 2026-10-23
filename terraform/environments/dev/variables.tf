@@ -28,3 +28,9 @@ variable "grafana_allowed_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "ssh_allowed_cidr" {
+  description = "Allowed IPv4 range for SSH"
+  type        = string
+  default     = "0.0.0.0/32"
+}

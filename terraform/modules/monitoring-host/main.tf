@@ -1,3 +1,6 @@
+data "aws_key_pair" "devops" {
+  key_name = "devops-cicd-project-dev-f70cd4acf95f"
+}
 data "aws_ssm_parameter" "al2023_ami" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
@@ -19,6 +22,15 @@ resource "aws_vpc_security_group_ingress_rule" "grafana" {
   to_port           = 3000
   ip_protocol       = "tcp"
   description       = "Grafana UI"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ssh" {
+  security_group_id = aws_security_group.monitoring.id
+  cidr_ipv4         = var.ssh_allowed_cidr
+  from_port         = 22
+  to_port           = 22
+  ip_protocol       = "tcp"
+  description       = "SSH access to monitoring EC2"
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
@@ -111,6 +123,7 @@ resource "aws_iam_role_policy" "alertmanager_secret_read" {
 resource "aws_instance" "monitoring" {
   ami                         = data.aws_ssm_parameter.al2023_ami.value
   instance_type               = var.instance_type
+  key_name                    = data.aws_key_pair.devops.key_name
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = [aws_security_group.monitoring.id]
   associate_public_ip_address = true
