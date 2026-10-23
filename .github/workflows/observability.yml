@@ -130,6 +130,65 @@ jobs:
         working-directory: terraform/environments/dev
         run: terraform output
 
+      - name: Wait for monitoring EC2 bootstrap
+        if: ${{ inputs.action == 'deploy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INSTANCE_ID=$(terraform -chdir=terraform/environments/dev output -raw monitoring_instance_id)
+
+          echo "Waiting for EC2 cloud-init and Docker readiness..."
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          Path("ssm-readiness.json").write_text(json.dumps({
+              "commands": [
+                  "set -eu",
+                  "cloud-init status --wait",
+                  "systemctl is-active --quiet docker",
+                  "docker info >/dev/null",
+                  "docker ps --format '{{.Names}}'"
+              ]
+          }))
+          PY
+
+          READY=false
+
+          for ATTEMPT in $(seq 1 30); do
+            COMMAND_ID=$(aws ssm send-command \
+              --region "$AWS_REGION" \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters file://ssm-readiness.json \
+              --query 'Command.CommandId' \
+              --output text 2>/dev/null) || {
+                echo "Attempt $ATTEMPT: SSM not ready yet."
+                sleep 10
+                continue
+              }
+
+            if aws ssm wait command-executed \
+              --region "$AWS_REGION" \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" 2>/dev/null; then
+              echo "EC2 bootstrap completed. Docker is ready."
+              READY=true
+              break
+            fi
+
+            echo "Attempt $ATTEMPT: waiting for bootstrap..."
+            sleep 10
+          done
+
+          rm -f ssm-readiness.json
+
+          if [ "$READY" != "true" ]; then
+            echo "ERROR: EC2 bootstrap did not become ready."
+            exit 1
+          fi
 
       - name: Deploy Alertmanager through SSM
         if: ${{ inputs.action == 'deploy' }}
